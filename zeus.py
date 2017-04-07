@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta; import numpy, ast, json, requests, urllib2, numpy, sys
 
 class WeatherDataPoint:
-    def __init__(self, time, temp):
+    def __init__(self, time, temp, zone):
         self.time=time
         self.temp=temp
+        self.zone=zone
 
 class PjmDataPoint:
     def __init__(self, time, load, zone):
@@ -12,15 +13,17 @@ class PjmDataPoint:
         self.zone=zone
     def __str__(self):
         return self.zone+' '+str(self.time)+' '+str(self.load)
-    
 
-def getWeatherData(zone, datetime):
+def getLatLonDict():
     latlon = open('pjmzones.csv').read().replace('\n',' ')
     latlon=ast.literal_eval(latlon)
+    return latlon
+
+def getWeatherDataForZone(zone, datetime):
+    latlon = getLatLonDict()
 
     baseUrl='https://api.darksky.net/forecast/'
     apikey='eaf6379ff9461d7506e187909ab14c05/'
-    #make api key a constant at the top of the zeus file
     latitude=0
     longitude=0
     latitude,longitude = latlon[zone]
@@ -32,10 +35,11 @@ def getWeatherData(zone, datetime):
     weatherJson = weatherDataRequest.json()
     hourlyDataList = weatherJson["hourly"]["data"]
     timeTempList = []
+    
     for hourlyData in hourlyDataList:
         time = hourlyData["time"]
         temp = hourlyData["temperature"]
-        wdp = WeatherDataPoint(time, temp)
+        wdp = WeatherDataPoint(time, temp, zone)
         timeTempList.append(wdp)
         print time, temp
     return timeTempList
@@ -53,14 +57,15 @@ def getPjmData(datetime):
     for idx, pjm_line in enumerate(pjm_lines):
         if 'HOUR ENDING' in pjm_line:
             headerPositionList.append(idx)
+            
     for position in headerPositionList:
-        #extract zone from header line
         headerLine = pjm_lines[position].strip()
         zone=headerLine[0:headerLine.find('HOUR')]
-        #get data for this zone
         zoneDataList = getPjmDataForZone(zone, pjm_lines[position+4:position+18])
-        timeLoadList.append(zoneDataList)
+        timeLoadList.extend(zoneDataList)
+        #appending datapoints not list
     return timeLoadList
+
 
 def getPjmDataForZone(zone, timelines):
     zoneDataList=[]
@@ -80,8 +85,26 @@ def getPjmDataForZone(zone, timelines):
                 
             tempDatetime = datetime.strptime(datestring+' '+timestring+mer, '%m/%d/%y %I%p')
             dataPoint = PjmDataPoint(tempDatetime, loadReading, zone)
-            loadList.append(dataPoint)
-            print dataPoint
+            zoneDataList.append(dataPoint)
     return zoneDataList
 
-getWeatherData('PEPCO',datetime.now())
+
+def getFinalList(timeTempList, timeLoadList):
+    matchesfound=0
+    latlon = getLatLonDict()
+    for loadDataPoint in timeLoadList:
+        for tempDataPoint in timeTempList:
+            if tempDataPoint.zone is not loadDataPoint.zone:
+                continue
+            elif (tempDataPoint.time - loadDataPoint.time) < 3600:
+                print tempDataPoint.zone, tempDataPoint.time, tempDataPoint.temp, loadDataPoint.load
+                matchesfound+=1
+    if matchesfound!=len(timeLoadList):
+        print 'We didnt match everything'
+        #find the darksky data point that matches this one zone and time regions
+
+#timeTempList = getWeatherDataForZone('PEPCO',datetime.now())
+timeLoadList = getPjmData(datetime.now())
+for t in timeLoadList:
+    print t.zone
+#getFinalList(timeTempList, timeLoadList)
